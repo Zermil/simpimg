@@ -8,31 +8,32 @@
 #define UNUSED(x) ((void)(x))
 #define WIDTH 1280
 #define HEIGHT 720
+#define SCALE_FACTOR 0.05f
 
 #define global static
 #define internal static
 
 #define QUAD_VERTICES 4
 #define QUAD_TRIANGLES 2
-#define SCALE_FACTOR 0.05f
+#define QUAD_ELEMENTS 3
 
 // TODO(Aiden): This is a macro for now
 #define CAMERA_PTR(window) (&(((Renderer *) glfwGetWindowUserPointer((window)))->camera))
 
-typedef struct
+struct Vec2
 {
     float x;
     float y;
-} Vec2;
+};
 
-typedef struct
+struct Triangle
 {
     unsigned int a;
     unsigned int b;
     unsigned int c;
-} Triangle;
+};
 
-typedef struct
+struct Camera
 {
     float offset_x;
     float offset_y;
@@ -41,15 +42,15 @@ typedef struct
     float mouse_y;
 
     float scale;
-} Camera;
+};
 
-typedef struct
+struct Renderer
 {
     Vec2 vertices[QUAD_VERTICES];
     Triangle indices[QUAD_TRIANGLES];
     
     Camera camera;
-} Renderer;
+};
 
 global const char *vertex_shader =
     "#version 330\n"
@@ -99,16 +100,13 @@ internal void cursor_position_callback(GLFWwindow *window, double xpos, double y
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
     Camera *camera = CAMERA_PTR(window);
     
-    if (state == GLFW_RELEASE) {
-        camera->mouse_x = static_cast<float> (xpos);
-        camera->mouse_y = static_cast<float> (ypos);
-    } else {
+    if (state == GLFW_PRESS) {
         camera->offset_x -= (static_cast<float> (xpos) - camera->mouse_x) / camera->scale;
         camera->offset_y -= (static_cast<float> (ypos) - camera->mouse_y) / camera->scale;
+    } 
 
-        camera->mouse_x = static_cast<float> (xpos);
-        camera->mouse_y = static_cast<float> (ypos);
-    }
+    camera->mouse_x = static_cast<float> (xpos);
+    camera->mouse_y = static_cast<float> (ypos);
 }
 
 internal void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
@@ -204,7 +202,7 @@ int main(int argc, char **argv)
     
     Renderer renderer = {0};
     
-    glBufferData(GL_ARRAY_BUFFER, QUAD_VERTICES * sizeof(Vec2), renderer.vertices, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(renderer.vertices), renderer.vertices, GL_DYNAMIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vec2), (void *) offsetof(Renderer, vertices));
     glEnableVertexAttribArray(0);
     
@@ -226,8 +224,8 @@ int main(int argc, char **argv)
 
         glBindVertexArray(VAO);
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, QUAD_VERTICES * sizeof(Vec2), renderer.vertices);
-        glDrawElements(GL_TRIANGLES, QUAD_TRIANGLES * 3, GL_UNSIGNED_INT, renderer.indices);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(renderer.vertices), renderer.vertices);
+        glDrawElements(GL_TRIANGLES, QUAD_TRIANGLES * QUAD_ELEMENTS, GL_UNSIGNED_INT, renderer.indices);
         
         glfwSwapBuffers(window);
         glfwPollEvents();
