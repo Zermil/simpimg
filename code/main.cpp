@@ -6,8 +6,8 @@
 #include <glfw3.h>
 
 #define UNUSED(x) ((void)(x))
-#define WIDTH 1280
-#define HEIGHT 720
+#define DEFAULT_WIDTH 1280
+#define DEFAULT_HEIGHT 720
 
 #define SCALE_FACTOR 0.05f
 #define SCALE_MAX 10.0f
@@ -20,10 +20,14 @@
 #define QUAD_TRIANGLES 2
 #define QUAD_ELEMENTS 3
 
-struct Vec2
+union Vec2
 {
-    float x;
-    float y;
+    float xy[2];
+
+    struct {
+        float x;
+        float y;
+    };
 };
 
 struct Triangle
@@ -49,6 +53,7 @@ struct Renderer
     Vec2 vertices[QUAD_VERTICES];
     Triangle indices[QUAD_TRIANGLES];
 
+    unsigned int shader_program;
     unsigned int VAO;
     unsigned int VBO;
     
@@ -95,7 +100,7 @@ internal void immediate_quad_centered(Renderer *renderer, float x, float y, floa
     renderer->vertices[1] = { sx - (width / 2.0f) + width, sy - (height / 2.0f) };
     renderer->vertices[2] = { sx - (width / 2.0f),         sy - (height / 2.0f) + height };
     renderer->vertices[3] = { sx - (width / 2.0f) + width, sy - (height / 2.0f) + height };
-
+    
     renderer->indices[0] = { 0, 1, 2 };
     renderer->indices[1] = { 1, 2, 3 };
 }
@@ -108,10 +113,34 @@ internal void gl_render(Renderer *renderer)
     glDrawElements(GL_TRIANGLES, QUAD_TRIANGLES * QUAD_ELEMENTS, GL_UNSIGNED_INT, renderer->indices);
 }
 
+internal void framebuffer_size_callback(GLFWwindow *window, int width, int height)
+{
+    if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
+        return;
+    }
+    
+    Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
+    Camera *camera = &renderer->camera;
+    
+    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
+
+    Vec2 old_resolution;
+    glGetUniformfv(renderer->shader_program, resolution_loc, old_resolution.xy);
+    
+    camera->offset_x = width * (camera->offset_x / old_resolution.x);
+    camera->offset_y = height * (camera->offset_y / old_resolution.y);
+    
+    glUseProgram(renderer->shader_program);
+    glUniform2f(resolution_loc, static_cast<float> (width), static_cast<float> (height));    
+    glViewport(0, 0, width, height);
+}
+
 internal void cursor_position_callback(GLFWwindow *window, double xpos, double ypos)
 {
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
-    Camera *camera = static_cast<Camera *> (glfwGetWindowUserPointer(window));
+
+    Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
+    Camera *camera = &renderer->camera;
     
     if (state == GLFW_PRESS) {
         camera->offset_x -= (static_cast<float> (xpos) - camera->mouse_x) / camera->scale;
@@ -125,9 +154,10 @@ internal void cursor_position_callback(GLFWwindow *window, double xpos, double y
 internal void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
     UNUSED(xoffset);
-    
-    Camera *camera = static_cast<Camera *> (glfwGetWindowUserPointer(window));
-    
+
+    Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
+    Camera *camera = &renderer->camera;
+        
     float before_x, before_y;
     screen_to_world(camera, camera->mouse_x, camera->mouse_y, &before_x, &before_y);
     
@@ -153,8 +183,7 @@ internal GLFWwindow* create_window(unsigned int width, unsigned int height, cons
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
+    
     GLFWwindow *window = glfwCreateWindow(width, height, title, NULL, NULL);
     
     if (window == NULL) {
@@ -174,6 +203,7 @@ internal GLFWwindow* create_window(unsigned int width, unsigned int height, cons
 
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     return(window);
 }
@@ -183,8 +213,9 @@ int main(int argc, char **argv)
     UNUSED(argc);
     UNUSED(argv);
 
-    GLFWwindow *window = create_window(WIDTH, HEIGHT, "Hello, Sailor!");
-
+    GLFWwindow *window = create_window(DEFAULT_WIDTH, DEFAULT_HEIGHT, "Hello, Sailor!");
+    Renderer renderer = {0};
+    
     // Shader
     unsigned int vert = glCreateShader(GL_VERTEX_SHADER);
     unsigned int frag = glCreateShader(GL_FRAGMENT_SHADER);
@@ -195,21 +226,19 @@ int main(int argc, char **argv)
     glShaderSource(frag, 1, &fragment_shader, NULL);
     glCompileShader(frag);
 
-    unsigned int shader_program = glCreateProgram();
+    renderer.shader_program = glCreateProgram();
 
-    glAttachShader(shader_program, vert);
-    glAttachShader(shader_program, frag);
-    glLinkProgram(shader_program);
+    glAttachShader(renderer.shader_program, vert);
+    glAttachShader(renderer.shader_program, frag);
+    glLinkProgram(renderer.shader_program);
     
     glDeleteShader(vert);
     glDeleteShader(frag);
     
-    glUseProgram(shader_program);
-    glUniform2f(glGetUniformLocation(shader_program, "resolution"), WIDTH, HEIGHT);
+    glUseProgram(renderer.shader_program);
+    glUniform2f(glGetUniformLocation(renderer.shader_program, "resolution"), DEFAULT_WIDTH, DEFAULT_HEIGHT);
     
     // Render
-    Renderer renderer = {0};
-    
     glGenVertexArrays(1, &renderer.VAO);
     glGenBuffers(1, &renderer.VBO);
 
@@ -224,11 +253,11 @@ int main(int argc, char **argv)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     // Initial conditions
-    renderer.camera.offset_x = -(WIDTH / 2.0f);
-    renderer.camera.offset_y = -(HEIGHT / 2.0f);
+    renderer.camera.offset_x = -(DEFAULT_WIDTH / 2.0f);
+    renderer.camera.offset_y = -(DEFAULT_HEIGHT / 2.0f);
     renderer.camera.scale = 1.0f;
 
-    glfwSetWindowUserPointer(window, &renderer.camera);
+    glfwSetWindowUserPointer(window, &renderer);
     
     while (!glfwWindowShouldClose(window)) {
         immediate_quad_centered(&renderer, 0.0f, 0.0f, 150.0f, 300.0f);
@@ -244,7 +273,7 @@ int main(int argc, char **argv)
 
     glDeleteVertexArrays(1, &renderer.VAO);
     glDeleteBuffers(1, &renderer.VBO);
-    glDeleteProgram(shader_program);
+    glDeleteProgram(renderer.shader_program);
     
     glfwDestroyWindow(window);
     glfwTerminate();
