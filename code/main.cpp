@@ -83,16 +83,18 @@ internal inline void world_to_screen(Camera *camera, float wx, float wy, float *
     *sy = (wy - camera->offset_y) * camera->scale;
 }
 
-internal void immediate_quad_centered(Renderer *renderer, float x, float y, float size)
+internal void immediate_quad_centered(Renderer *renderer, float x, float y, float width, float height)
 {
-    float wx, wy;
-    world_to_screen(&renderer->camera, x, y, &wx, &wy);
+    float sx, sy;
+    world_to_screen(&renderer->camera, x, y, &sx, &sy);
     
-    size *= renderer->camera.scale;
-    renderer->vertices[0] = { wx - (size / 2.0f),        wy - (size / 2.0f) };
-    renderer->vertices[1] = { wx - (size / 2.0f) + size, wy - (size / 2.0f) };
-    renderer->vertices[2] = { wx - (size / 2.0f),        wy - (size / 2.0f) + size };
-    renderer->vertices[3] = { wx - (size / 2.0f) + size, wy - (size / 2.0f) + size };
+    width *= renderer->camera.scale;
+    height *= renderer->camera.scale;
+    
+    renderer->vertices[0] = { sx - (width / 2.0f),         sy - (height / 2.0f) };
+    renderer->vertices[1] = { sx - (width / 2.0f) + width, sy - (height / 2.0f) };
+    renderer->vertices[2] = { sx - (width / 2.0f),         sy - (height / 2.0f) + height };
+    renderer->vertices[3] = { sx - (width / 2.0f) + width, sy - (height / 2.0f) + height };
 
     renderer->indices[0] = { 0, 1, 2 };
     renderer->indices[1] = { 1, 2, 3 };
@@ -229,7 +231,7 @@ int main(int argc, char **argv)
     glfwSetWindowUserPointer(window, &renderer.camera);
     
     while (!glfwWindowShouldClose(window)) {
-        immediate_quad_centered(&renderer, 0.0f, 0.0f, 150.0f);
+        immediate_quad_centered(&renderer, 0.0f, 0.0f, 150.0f, 300.0f);
         
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
