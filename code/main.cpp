@@ -12,7 +12,7 @@
 #define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 720
 
-#define SCALE_FACTOR 0.08f
+#define SCALE_FACTOR 0.09f
 #define SCALE_MAX 10.0f
 #define SCALE_MIN 0.1f
 
@@ -68,8 +68,8 @@ struct Renderer
     unsigned int VBO;
     
     unsigned int texture;
-    int texture_width;
-    int texture_height;
+    float texture_width;
+    float texture_height;
     
     Camera camera;
 };
@@ -107,6 +107,8 @@ internal inline void world_to_screen(Camera *camera, float wx, float wy, float *
     *sy = (wy - camera->offset_y) * camera->scale;
 }
 
+// @ToDo: There's most likely a better way to get current dimensions
+// (without this function and without storing it in Renderer struct)
 internal inline Vec2 get_window_resolution(Renderer *renderer)
 {        
     Vec2 resolution = {0};
@@ -117,10 +119,19 @@ internal inline Vec2 get_window_resolution(Renderer *renderer)
     return(resolution);
 }
 
+internal inline void fit_image_to_window(Renderer *renderer, float width, float height)
+{
+    Vec2 resolution = get_window_resolution(renderer);
+    float scale = MIN(resolution.x / width, resolution.y / height);
+
+    renderer->texture_width = width * scale;
+    renderer->texture_height = height * scale;
+}
+
 internal void load_create_texture(Renderer *renderer, const char *filename)
 {
-    int channels;
-    unsigned char *data = stbi_load(filename, &renderer->texture_width, &renderer->texture_height, &channels, 0);
+    int width, height, channels;
+    unsigned char *data = stbi_load(filename, &width, &height, &channels, 0);
     
     if (data == NULL) {
         // @ToDo: Proper error box/user error
@@ -138,11 +149,13 @@ internal void load_create_texture(Renderer *renderer, const char *filename)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     
-    glTexImage2D(GL_TEXTURE_2D, 0, format, renderer->texture_width, renderer->texture_height, 0, format, GL_UNSIGNED_BYTE, data);
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     glBindTexture(GL_TEXTURE_2D, 0);
     stbi_image_free(data);
+
+    fit_image_to_window(renderer, static_cast<float> (width), static_cast<float> (height));
 }
 
 internal void display_image_centered(Renderer *renderer)
@@ -183,18 +196,20 @@ internal void framebuffer_size_callback(GLFWwindow *window, int width, int heigh
     if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
         return;
     }
-    
+
     Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
     Camera *camera = &renderer->camera;
 
-    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
     Vec2 old_resolution = get_window_resolution(renderer);
+    camera->offset_x = width * (camera->offset_x / static_cast<float> (old_resolution.x));
+    camera->offset_y = height * (camera->offset_y / static_cast<float> (old_resolution.y));
     
-    camera->offset_x = width * (camera->offset_x / old_resolution.x);
-    camera->offset_y = height * (camera->offset_y / old_resolution.y);
-    
+    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
     glUseProgram(renderer->shader_program);
-    glUniform2f(resolution_loc, static_cast<float> (width), static_cast<float> (height));    
+    glUniform2f(resolution_loc, static_cast<float> (width), static_cast<float> (height));
+    
+    fit_image_to_window(renderer, renderer->texture_width, renderer->texture_height);
+    
     glViewport(0, 0, width, height);
 }
 
@@ -331,7 +346,7 @@ int main(int argc, char **argv)
     renderer.camera.offset_y = -(DEFAULT_HEIGHT / 2.0f);
     renderer.camera.scale = 1.0f;
 
-    load_create_texture(&renderer, "../example_big.png");
+    load_create_texture(&renderer, "../example.png");
     glfwSetWindowUserPointer(window, &renderer);
     
     while (!glfwWindowShouldClose(window)) {
