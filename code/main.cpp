@@ -5,11 +5,14 @@
 #include <glew.h>
 #include <glfw3.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #define UNUSED(x) ((void)(x))
 #define DEFAULT_WIDTH 1280
 #define DEFAULT_HEIGHT 720
 
-#define SCALE_FACTOR 0.05f
+#define SCALE_FACTOR 0.08f
 #define SCALE_MAX 10.0f
 #define SCALE_MIN 0.1f
 
@@ -20,6 +23,8 @@
 #define QUAD_TRIANGLES 2
 #define QUAD_ELEMENTS 3
 
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+
 union Vec2
 {
     float xy[2];
@@ -28,6 +33,11 @@ union Vec2
         float x;
         float y;
     };
+};
+
+struct Vertex {
+    Vec2 vertex_pos;
+    Vec2 texture_pos;
 };
 
 struct Triangle
@@ -50,30 +60,39 @@ struct Camera
 
 struct Renderer
 {
-    Vec2 vertices[QUAD_VERTICES];
+    Vertex vertices[QUAD_VERTICES];
     Triangle indices[QUAD_TRIANGLES];
 
     unsigned int shader_program;
     unsigned int VAO;
     unsigned int VBO;
     
+    unsigned int texture;
+    int texture_width;
+    int texture_height;
+    
     Camera camera;
 };
 
 global const char *vertex_shader =
     "#version 330\n"
-    "layout (location = 0) in vec2 aPos;\n"
+    "layout (location = 0) in vec2 aVertex_pos;\n"
+    "layout (location = 1) in vec2 aTexture_pos;\n"
     "uniform vec2 resolution;\n"
+    "out vec2 texture_pos;\n"
     "void main() {\n"
-    "  vec2 pos = (aPos / resolution) * 2.0 - 1.0;\n"
+    "  vec2 pos = (aVertex_pos / resolution) * 2.0 - 1.0;\n"
     "  gl_Position = vec4(pos.x, -pos.y, 0.0, 1.0);\n"
+    "  texture_pos = aTexture_pos;\n"
     "}";
 
 global const char *fragment_shader =
     "#version 330\n"
+    "in vec2 texture_pos;\n"
     "out vec4 frag_color;\n"
+    "uniform sampler2D texture_data;\n"
     "void main() {\n"
-    "  frag_color = vec4(1.0, 1.0, 1.0, 1.0);\n"
+    "  frag_color = texture(texture_data, texture_pos);\n"
     "}";
 
 internal inline void screen_to_world(Camera *camera, float sx, float sy, float *wx, float *wy)
@@ -88,27 +107,73 @@ internal inline void world_to_screen(Camera *camera, float wx, float wy, float *
     *sy = (wy - camera->offset_y) * camera->scale;
 }
 
-internal void immediate_quad_centered(Renderer *renderer, float x, float y, float width, float height)
+internal inline Vec2 get_window_resolution(Renderer *renderer)
+{        
+    Vec2 resolution = {0};
+    
+    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
+    glGetUniformfv(renderer->shader_program, resolution_loc, resolution.xy);
+
+    return(resolution);
+}
+
+internal void load_create_texture(Renderer *renderer, const char *filename)
 {
+    int channels;
+    unsigned char *data = stbi_load(filename, &renderer->texture_width, &renderer->texture_height, &channels, 0);
+    
+    if (data == NULL) {
+        // @ToDo: Proper error box/user error
+        fprintf(stderr, "[ERROR]: Could not load texture\n");
+    }
+
+    // @ToDo: This is weirdly too complex(?) in a way, feels like it can be simpler.
+    int format = (channels == 4 ? (GL_RGBA) : (GL_RGB));
+    
+    glGenTextures(1, &renderer->texture);
+    glBindTexture(GL_TEXTURE_2D, renderer->texture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, format, renderer->texture_width, renderer->texture_height, 0, format, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(data);
+}
+
+internal void display_image_centered(Renderer *renderer)
+{    
     float sx, sy;
-    world_to_screen(&renderer->camera, x, y, &sx, &sy);
+    world_to_screen(&renderer->camera, 0.0f, 0.0f, &sx, &sy);
+
+    float width = renderer->texture_width * renderer->camera.scale;
+    float height = renderer->texture_height * renderer->camera.scale;
     
-    width *= renderer->camera.scale;
-    height *= renderer->camera.scale;
-    
-    renderer->vertices[0] = { sx - (width / 2.0f),         sy - (height / 2.0f) };
-    renderer->vertices[1] = { sx - (width / 2.0f) + width, sy - (height / 2.0f) };
-    renderer->vertices[2] = { sx - (width / 2.0f),         sy - (height / 2.0f) + height };
-    renderer->vertices[3] = { sx - (width / 2.0f) + width, sy - (height / 2.0f) + height };
+    renderer->vertices[0] = { { sx - (width / 2.0f),         sy - (height / 2.0f) },          { 0.0f, 0.0f }};
+    renderer->vertices[1] = { { sx - (width / 2.0f) + width, sy - (height / 2.0f) },          { 1.0f, 0.0f }};
+    renderer->vertices[2] = { { sx - (width / 2.0f),         sy - (height / 2.0f) + height }, { 0.0f, 1.0f }};
+    renderer->vertices[3] = { { sx - (width / 2.0f) + width, sy - (height / 2.0f) + height }, { 1.0f, 1.0f }};
     
     renderer->indices[0] = { 0, 1, 2 };
     renderer->indices[1] = { 1, 2, 3 };
 }
 
 internal void gl_render(Renderer *renderer)
-{
+{    
     glBindVertexArray(renderer->VAO);
     glBindBuffer(GL_ARRAY_BUFFER, renderer->VBO);
+    
+    // NOTE(Aiden): We are never rendering more than one texture really,
+    // if that happens to be the case at some point (multiple images in one window or something)
+    // this and maybe immediate_quad_centered(); would need to be modified with something
+    // like array of textures and their respective IDs.
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, renderer->texture);
+        
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(renderer->vertices), renderer->vertices);
     glDrawElements(GL_TRIANGLES, QUAD_TRIANGLES * QUAD_ELEMENTS, GL_UNSIGNED_INT, renderer->indices);
 }
@@ -121,11 +186,9 @@ internal void framebuffer_size_callback(GLFWwindow *window, int width, int heigh
     
     Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
     Camera *camera = &renderer->camera;
-    
-    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
 
-    Vec2 old_resolution;
-    glGetUniformfv(renderer->shader_program, resolution_loc, old_resolution.xy);
+    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
+    Vec2 old_resolution = get_window_resolution(renderer);
     
     camera->offset_x = width * (camera->offset_x / old_resolution.x);
     camera->offset_y = height * (camera->offset_y / old_resolution.y);
@@ -205,6 +268,9 @@ internal GLFWwindow* create_window(unsigned int width, unsigned int height, cons
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
     return(window);
 }
 
@@ -216,51 +282,60 @@ int main(int argc, char **argv)
     GLFWwindow *window = create_window(DEFAULT_WIDTH, DEFAULT_HEIGHT, "Hello, Sailor!");
     Renderer renderer = {0};
     
-    // Shader
-    unsigned int vert = glCreateShader(GL_VERTEX_SHADER);
-    unsigned int frag = glCreateShader(GL_FRAGMENT_SHADER);
+    // Shader setup
+    {
+        unsigned int vert = glCreateShader(GL_VERTEX_SHADER);
+        unsigned int frag = glCreateShader(GL_FRAGMENT_SHADER);
 
-    glShaderSource(vert, 1, &vertex_shader, NULL);
-    glCompileShader(vert);
+        glShaderSource(vert, 1, &vertex_shader, NULL);
+        glCompileShader(vert);
 
-    glShaderSource(frag, 1, &fragment_shader, NULL);
-    glCompileShader(frag);
+        glShaderSource(frag, 1, &fragment_shader, NULL);
+        glCompileShader(frag);
 
-    renderer.shader_program = glCreateProgram();
+        renderer.shader_program = glCreateProgram();
 
-    glAttachShader(renderer.shader_program, vert);
-    glAttachShader(renderer.shader_program, frag);
-    glLinkProgram(renderer.shader_program);
+        glAttachShader(renderer.shader_program, vert);
+        glAttachShader(renderer.shader_program, frag);
+        glLinkProgram(renderer.shader_program);
     
-    glDeleteShader(vert);
-    glDeleteShader(frag);
+        glDeleteShader(vert);
+        glDeleteShader(frag);
     
-    glUseProgram(renderer.shader_program);
-    glUniform2f(glGetUniformLocation(renderer.shader_program, "resolution"), DEFAULT_WIDTH, DEFAULT_HEIGHT);
+        glUseProgram(renderer.shader_program);
+        glUniform2f(glGetUniformLocation(renderer.shader_program, "resolution"), DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    }
     
-    // Render
-    glGenVertexArrays(1, &renderer.VAO);
-    glGenBuffers(1, &renderer.VBO);
+    // Render setup
+    {
+        glGenVertexArrays(1, &renderer.VAO);
+        glGenBuffers(1, &renderer.VBO);
 
-    glBindVertexArray(renderer.VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, renderer.VBO);
+        glBindVertexArray(renderer.VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, renderer.VBO);
         
-    glBufferData(GL_ARRAY_BUFFER, sizeof(renderer.vertices), renderer.vertices, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vec2), (void *) offsetof(Renderer, vertices));
-    glEnableVertexAttribArray(0);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(renderer.vertices), renderer.vertices, GL_DYNAMIC_DRAW);
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *) offsetof(Vertex, vertex_pos));
+        glEnableVertexAttribArray(0);
+
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *) offsetof(Vertex, texture_pos));
+        glEnableVertexAttribArray(1);
     
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
 
     // Initial conditions
     renderer.camera.offset_x = -(DEFAULT_WIDTH / 2.0f);
     renderer.camera.offset_y = -(DEFAULT_HEIGHT / 2.0f);
     renderer.camera.scale = 1.0f;
 
+    load_create_texture(&renderer, "../example_big.png");
     glfwSetWindowUserPointer(window, &renderer);
     
     while (!glfwWindowShouldClose(window)) {
-        immediate_quad_centered(&renderer, 0.0f, 0.0f, 150.0f, 300.0f);
+        display_image_centered(&renderer);
         
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -273,6 +348,7 @@ int main(int argc, char **argv)
 
     glDeleteVertexArrays(1, &renderer.VAO);
     glDeleteBuffers(1, &renderer.VBO);
+    glDeleteTextures(1, &renderer.texture);
     glDeleteProgram(renderer.shader_program);
     
     glfwDestroyWindow(window);
