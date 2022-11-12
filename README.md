@@ -2,6 +2,8 @@
 
 Rudimentary image viewer made with [OpenGL](https://www.opengl.org/)
 
+![example](./example.png)
+
 ## Build
 
 Build for release:
