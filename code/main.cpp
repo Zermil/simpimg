@@ -109,19 +109,20 @@ internal inline void world_to_screen(Camera *camera, float wx, float wy, float *
 
 // @ToDo: There's most likely a better way to get current dimensions
 // (without this function and without storing it in Renderer struct)
-internal inline Vec2 get_window_resolution(Renderer *renderer)
+internal inline Vec2 get_shader_resolution(unsigned int shader_program)
 {        
     Vec2 resolution = {0};
     
-    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
-    glGetUniformfv(renderer->shader_program, resolution_loc, resolution.xy);
+    glGetUniformfv(shader_program,
+                   glGetUniformLocation(shader_program, "resolution"),
+                   resolution.xy);
 
     return(resolution);
 }
 
 internal inline void fit_image_to_window(Renderer *renderer, float width, float height)
 {
-    Vec2 resolution = get_window_resolution(renderer);
+    Vec2 resolution = get_shader_resolution(renderer->shader_program);
     float scale = MIN(resolution.x / width, resolution.y / height);
 
     renderer->texture_width = width * scale;
@@ -152,10 +153,10 @@ internal void load_create_texture(Renderer *renderer, const char *filename)
     glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
+    fit_image_to_window(renderer, static_cast<float> (width), static_cast<float> (height));
+
     glBindTexture(GL_TEXTURE_2D, 0);
     stbi_image_free(data);
-
-    fit_image_to_window(renderer, static_cast<float> (width), static_cast<float> (height));
 }
 
 internal void display_image_centered(Renderer *renderer)
@@ -182,8 +183,8 @@ internal void gl_render(Renderer *renderer)
     
     // NOTE(Aiden): We are never rendering more than one texture really,
     // if that happens to be the case at some point (multiple images in one window or something)
-    // this and maybe immediate_quad_centered(); would need to be modified with something
-    // like array of textures and their respective IDs.
+    // this alongside immediate_quad_centered(); would need to be modified with something
+    // like an array of textures and their respective IDs.
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, renderer->texture);
         
@@ -200,16 +201,16 @@ internal void framebuffer_size_callback(GLFWwindow *window, int width, int heigh
     Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
     Camera *camera = &renderer->camera;
 
-    Vec2 old_resolution = get_window_resolution(renderer);
+    Vec2 old_resolution = get_shader_resolution(renderer->shader_program);
     camera->offset_x = width * (camera->offset_x / static_cast<float> (old_resolution.x));
     camera->offset_y = height * (camera->offset_y / static_cast<float> (old_resolution.y));
     
-    unsigned int resolution_loc = glGetUniformLocation(renderer->shader_program, "resolution");
     glUseProgram(renderer->shader_program);
-    glUniform2f(resolution_loc, static_cast<float> (width), static_cast<float> (height));
+    glUniform2f(glGetUniformLocation(renderer->shader_program, "resolution"),
+                static_cast<float> (width),
+                static_cast<float> (height));
     
     fit_image_to_window(renderer, renderer->texture_width, renderer->texture_height);
-    
     glViewport(0, 0, width, height);
 }
 
