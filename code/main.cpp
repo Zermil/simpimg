@@ -214,13 +214,16 @@ internal void framebuffer_size_callback(GLFWwindow *window, int width, int heigh
     glViewport(0, 0, width, height);
 }
 
+// @ToDo: Mouse position is currently updated everytime we move the cursor
+// we should probably change it to be updated only on mouse click.
 internal void cursor_position_callback(GLFWwindow *window, double xpos, double ypos)
 {
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 
     Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
     Camera *camera = &renderer->camera;
-    
+
+    // @ToDo: Double click to reset camera to its default position?
     if (state == GLFW_PRESS) {
         camera->offset_x -= (static_cast<float> (xpos) - camera->mouse_x) / camera->scale;
         camera->offset_y -= (static_cast<float> (ypos) - camera->mouse_y) / camera->scale;
