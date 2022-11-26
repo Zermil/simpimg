@@ -136,7 +136,8 @@ internal void load_create_texture(Renderer *renderer, const char *filename)
     
     if (data == NULL) {
         // @ToDo: Proper error box/user error
-        fprintf(stderr, "[ERROR]: Could not load texture\n");
+        fprintf(stderr, "[ERROR]: Could not load texture, possibly not enough memory!\n");
+        return;
     }
 
     // @ToDo: This is weirdly too complex(?) in a way, feels like it can be simpler.
