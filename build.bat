@@ -10,5 +10,5 @@ call %MSVC_PATH%\vcvars64.bat
 
 pushd %~dp0
 if not exist .\build mkdir build
-cl %CXXFLAGS% %INCLUDES% code\main.cpp /Fo:build\ /Fe:build\opengl.exe %LIBS% /link /NODEFAULTLIB:libcmt.lib
+cl %CXXFLAGS% %INCLUDES% code\main.cpp /Fo:build\ /Fe:build\simpimg_debug.exe %LIBS% /link /NODEFAULTLIB:libcmt.lib
 popd
