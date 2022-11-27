@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
 #define GLEW_STATIC
 #include <glew.h>
 #include <glfw3.h>
@@ -23,7 +27,13 @@
 #define QUAD_TRIANGLES 2
 #define QUAD_ELEMENTS 3
 
+#define ARR_LEN(arr) ((sizeof(arr))/sizeof(*arr))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
+
+/* 
+ * @ToDo: Some of the functionality could be in separate file(s) and just #include them for "unity build" (https://en.wikipedia.org/wiki/Unity_build)
+ * @ToDo: Double click to reset camera to its default position?
+*/ 
 
 union Vec2
 {
@@ -74,6 +84,12 @@ struct Renderer
     Camera camera;
 };
 
+global const char* SUPPORTED_EXTENSIONS[] = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+};
+
 global const char *vertex_shader =
     "#version 330\n"
     "layout (location = 0) in vec2 aVertex_pos;\n"
@@ -107,8 +123,34 @@ internal inline void world_to_screen(Camera *camera, float wx, float wy, float *
     *sy = (wy - camera->offset_y) * camera->scale;
 }
 
+internal inline void win32_error(const char *msg, const char *title)
+{
+    MessageBox(NULL, msg, title, MB_OK | MB_ICONWARNING | MB_TASKMODAL);
+}
+
+internal bool check_file_extension(const char *filename)
+{
+    const char *extension = filename;
+    int length = static_cast<int> (strlen(filename));
+    
+    for (int i = length; i >= 0; --i) {
+        if (filename[i] == '.') {
+            extension = (filename + i);
+            break;
+        }
+    }
+    
+    for (int i = 0; i < ARR_LEN(SUPPORTED_EXTENSIONS); ++i) {
+        if (strcmp(extension, SUPPORTED_EXTENSIONS[i]) == 0) {
+            return(true);
+        }
+    }
+    
+    return(false);
+}
+
 // @ToDo: There's most likely a better way to get current dimensions
-// (without this function and without storing it in Renderer struct)
+// without this function and without storing it in Renderer struct
 internal inline Vec2 get_shader_resolution(unsigned int shader_program)
 {        
     Vec2 resolution = {0};
@@ -130,17 +172,26 @@ internal inline void fit_image_to_window(Renderer *renderer, float width, float 
 }
 
 internal void load_create_texture(Renderer *renderer, const char *filename)
-{
-    int width, height, channels;
-    unsigned char *data = stbi_load(filename, &width, &height, &channels, 0);
-    
-    if (data == NULL) {
-        // @ToDo: Proper error box/user error
-        fprintf(stderr, "[ERROR]: Could not load texture, possibly not enough memory!\n");
+{   
+    unsigned long file_attr = GetFileAttributes(filename);
+    if ((file_attr == INVALID_FILE_ATTRIBUTES) || (file_attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        win32_error("Could not find the requested file.", "Incorrect path");
         return;
     }
 
-    // @ToDo: This is weirdly too complex(?) in a way, feels like it can be simpler.
+    if (!check_file_extension(filename)) {
+        win32_error("File format not currently supported", "Incorrect format");
+        return;
+    }
+        
+    int width, height, channels;
+    unsigned char *data = stbi_load(filename, &width, &height, &channels, 0);
+
+    if (data == NULL) { 
+        win32_error("Could not properly load the image.", "Memory/File format exception");
+        return;
+    }
+
     int format = (channels == 4 ? (GL_RGBA) : (GL_RGB));
     
     glGenTextures(1, &renderer->texture);
@@ -215,8 +266,10 @@ internal void framebuffer_size_callback(GLFWwindow *window, int width, int heigh
     glViewport(0, 0, width, height);
 }
 
-// @ToDo: Mouse position is currently updated everytime we move the cursor
-// we should probably change it to be updated only on mouse click.
+// NOTE(Aiden): We _could_ update the mouse position everytime we click instead of doing
+// this, however, this is a much simpler solution and it doesn't cause that much "overhead"
+// (if you can even call it that). Otherwise we'd have to update the mouse position both
+// on-click and on-scroll as well as keep the update here because of panning logic.
 internal void cursor_position_callback(GLFWwindow *window, double xpos, double ypos)
 {
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
@@ -224,7 +277,6 @@ internal void cursor_position_callback(GLFWwindow *window, double xpos, double y
     Renderer *renderer = static_cast<Renderer *> (glfwGetWindowUserPointer(window));
     Camera *camera = &renderer->camera;
 
-    // @ToDo: Double click to reset camera to its default position?
     if (state == GLFW_PRESS) {
         camera->offset_x -= (static_cast<float> (xpos) - camera->mouse_x) / camera->scale;
         camera->offset_y -= (static_cast<float> (ypos) - camera->mouse_y) / camera->scale;
