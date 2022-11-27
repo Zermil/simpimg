@@ -33,6 +33,7 @@
 /* 
  * @ToDo: Some of the functionality could be in separate file(s) and just #include them for "unity build" (https://en.wikipedia.org/wiki/Unity_build)
  * @ToDo: Double click to reset camera to its default position?
+ * @ToDo: When trying to display image, make sure it was properly loaded, otherwise do not render anything
 */ 
 
 union Vec2
@@ -172,7 +173,7 @@ internal inline void fit_image_to_window(Renderer *renderer, float width, float 
 }
 
 internal void load_create_texture(Renderer *renderer, const char *filename)
-{   
+{
     unsigned long file_attr = GetFileAttributes(filename);
     if ((file_attr == INVALID_FILE_ATTRIBUTES) || (file_attr & FILE_ATTRIBUTE_DIRECTORY)) {
         win32_error("Could not find the requested file.", "Incorrect path");
@@ -180,7 +181,7 @@ internal void load_create_texture(Renderer *renderer, const char *filename)
     }
 
     if (!check_file_extension(filename)) {
-        win32_error("File format not currently supported", "Incorrect format");
+        win32_error("File format not currently supported.", "Incorrect format");
         return;
     }
         
@@ -219,13 +220,13 @@ internal void display_image_centered(Renderer *renderer)
     float width = renderer->texture_width * renderer->camera.scale;
     float height = renderer->texture_height * renderer->camera.scale;
     
-    renderer->vertices[0] = { { sx - (width / 2.0f),         sy - (height / 2.0f) },          { 0.0f, 0.0f }};
-    renderer->vertices[1] = { { sx - (width / 2.0f) + width, sy - (height / 2.0f) },          { 1.0f, 0.0f }};
-    renderer->vertices[2] = { { sx - (width / 2.0f),         sy - (height / 2.0f) + height }, { 0.0f, 1.0f }};
-    renderer->vertices[3] = { { sx - (width / 2.0f) + width, sy - (height / 2.0f) + height }, { 1.0f, 1.0f }};
+    renderer->vertices[0] = {{ sx - (width / 2.0f),         sy - (height / 2.0f) },          { 0.0f, 0.0f }};
+    renderer->vertices[1] = {{ sx - (width / 2.0f) + width, sy - (height / 2.0f) },          { 1.0f, 0.0f }};
+    renderer->vertices[2] = {{ sx - (width / 2.0f),         sy - (height / 2.0f) + height }, { 0.0f, 1.0f }};
+    renderer->vertices[3] = {{ sx - (width / 2.0f) + width, sy - (height / 2.0f) + height }, { 1.0f, 1.0f }};
     
-    renderer->indices[0] = { 0, 1, 2 };
-    renderer->indices[1] = { 1, 2, 3 };
+    renderer->indices[0] = {0, 1, 2};
+    renderer->indices[1] = {1, 2, 3};
 }
 
 internal void gl_render(Renderer *renderer)
