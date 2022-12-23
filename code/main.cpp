@@ -329,7 +329,7 @@ internal GLFWwindow* create_window(unsigned int width, unsigned int height, cons
     }
 
     glfwMakeContextCurrent(window);
-
+    
     unsigned int err = glewInit();
     if (GLEW_OK != err) {
         fprintf(stderr, "[ERROR]: Could not initialize glew: %s\n", glewGetErrorString(err));
@@ -340,6 +340,10 @@ internal GLFWwindow* create_window(unsigned int width, unsigned int height, cons
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    // @ToDo: Find a better way to make the motion smooth, maybe something with delta-time?
+    // instead of enabling v-sync.
+    glfwSwapInterval(1);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
